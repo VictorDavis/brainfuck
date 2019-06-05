@@ -1,13 +1,12 @@
 # bloody dependencies
 import sys
 
-# defaults
-VERBOSE = False
-SAFETYON, MAXLOOP = True, 999999
-CELLSIZE = 256
-NUMCELLS = 32768
+# defaults (NOTE: x & 255 == x % 256)
+CELLMAX = 255
+PTRMAX = 32767
+ALPHABET = "><+-.,[]"
 
-def match_brackets(code) -> dict:
+def match_brackets(code: str) -> dict:
     """Calculates dictionary of matching brackets."""
 
     # build map
@@ -20,117 +19,69 @@ def match_brackets(code) -> dict:
             mem.append(ptr)
             continue
         if code[ptr] == "]":
-            if len(mem) == 0:
-                raise UserWarning("Unmatched close bracket at position", ptr)
+            assert len(mem) > 0, f"Unmatched close bracket ] at position {ptr}"
             opener = mem.pop()
             closer = ptr
             brackets[opener] = closer
             brackets[closer] = opener
 
     # unmatched open
-    if len(mem) > 0:
-        raise UserWarning("Unmatched open bracket(s) at position(s)", mem)
+    assert len(mem) == 0, f"Unmatched open bracket(s) [ at position(s)" + ",".join(map(str, mem))
 
     # return dictionary
     return brackets
 
 
-def load(fname: str):
+def load(fname: str) -> str:
     """Opens a file and returns the contents."""
     with open(fname, "r") as f:
         code = f.read()
         f.close()
     return code
 
-def loadrun(fname: str, input: str = ""):
-    """Opens a file and runs the contents."""
-    code = load(fname)
-    output = run(code, input)
-    return output
-
-def run(code: str, input: str = ""):
+def run(code: str, input: str = "") -> str:
     """
     Runs brainfuck code.
     :param code: (string) Brainfuck code
     :param input: (string, optional) Code input
+    :returns output: (string) Code output
     """
 
     # clean
-    ALPHABET = "><+-.,[]"
     code = "".join([ char for char in code if char in ALPHABET ])
 
-    # recap
-    if VERBOSE:
-        print("Code:", code)
-    L = len(code)
-
     # initialize
-    cells = [0] * NUMCELLS
-    ptr, maxptr, inptr, readr = 0, 0, 0, 0
+    cells = [0] * (PTRMAX + 1)
+    ptr, inptr, readr = 0, 0, 0
     brackets = match_brackets(code)
-    if VERBOSE:
-        print("Brackets:", brackets)
     output = ""
 
-    # cheat
-    ctr = 0
-
     # loop
+    L = len(code)
     while readr < L:
-
-        # counter
-        ctr += 1
-        if ptr > maxptr:
-            maxptr = ptr
-
-        # safety: cap iterations
-        if SAFETYON:
-            if ctr > MAXLOOP:
-                break
 
         # command
         cmd = code[readr]
         readr += 1
 
-        # logging
-        if VERBOSE:
-            print(code[:readr])
-            print(cells[:maxptr], ptr, cells[ptr], cmd, output)
-
         # increment the data pointer (to point to the next cell to the right).
         if cmd == ">":
-            # ptr = (ptr+1) % NUMCELLS
-            if ptr < NUMCELLS:
-                ptr += 1
-            else:
-                ptr = 0
+            ptr = (ptr+1) & PTRMAX
             continue
 
         # decrement the data pointer (to point to the next cell to the left).
         if cmd == "<":
-            # ptr = (ptr+1) % NUMCELLS
-            if ptr > 0:
-                ptr -= 1
-            else:
-                ptr = NUMCELLS - 1
+            ptr = (ptr-1) & PTRMAX
             continue
 
         # increment (increase by one) the byte at the data pointer.
         if cmd == "+":
-            # cells[ptr] = (cells[ptr]+1) % CELLSIZE
-            if cells[ptr] < CELLSIZE:
-                cells[ptr] += 1
-            else:
-                cells[ptr] = 0
+            cells[ptr] = (cells[ptr]+1) & CELLMAX
             continue
 
         # decrement (decrease by one) the byte at the data pointer.
         if cmd == "-":
-            # cells[ptr] = (cells[ptr]-1) % CELLSIZE
-            if cells[ptr] > 0:
-                cells[ptr] -= 1
-            else:
-                cells[ptr] = CELLSIZE - 1
+            cells[ptr] = (cells[ptr]-1) & CELLMAX
             continue
 
         # output the byte at the data pointer.
@@ -145,6 +96,7 @@ def run(code: str, input: str = ""):
                 inptr += 1
                 cells[ptr] = ord(inchar)
             else:
+                # terminate program if run out of input
                 break
             continue
 
@@ -160,22 +112,29 @@ def run(code: str, input: str = ""):
                 readr = brackets[readr-1]
             continue
 
-    # done
-    print("Iterations:", ctr)
-    print("Memory cells utilized:", maxptr)
-    print("\nOutput:", output)
-
     # return
     return output
 
 
 def main():
-    if len(sys.argv) == 2:
-        loadrun(sys.argv[1])
+    L = len(sys.argv)
+    if L in [2, 3]:
+
+        # (required) file name
+        fname = sys.argv[1]
+        code = load(fname)
+
+        # (optional) input
+        input = ""
+        if L > 2:
+            input = sys.argv[2]
+
+        # zoomzoom!
+        output = run(code, input)
+        print(output)
+
     else:
-        if len(sys.argv) == 3:
-            loadrun(sys.argv[1], sys.argv[2])
-        else:
-            print("Usage:", sys.argv[0], "<filename> (<input>)")
+        print("Usage:", sys.argv[0], "<filename> (<input>)")
+
 
 if __name__ == "__main__": main()
