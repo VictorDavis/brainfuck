@@ -5,6 +5,18 @@ import sys
 CELLMAX = 255
 PTRMAX = 32767
 ALPHABET = "><+-.,[]"
+MAXFLOPS = 8192
+
+class Monitor:
+
+    def __init__(self, maxflops: int):
+        self.flops = 0
+        self.maxflops = maxflops
+
+    def ping(self) -> bool:
+        self.flops += 1
+        ok = self.flops < self.maxflops
+        return ok
 
 def match_brackets(code: str) -> dict:
     """Calculates dictionary of matching brackets."""
@@ -26,7 +38,7 @@ def match_brackets(code: str) -> dict:
             brackets[closer] = opener
 
     # unmatched open
-    assert len(mem) == 0, f"Unmatched open bracket(s) [ at position(s)" + ",".join(map(str, mem))
+    assert len(mem) == 0, f"Unmatched open bracket(s) [ at position(s) " + ",".join(map(str, mem))
 
     # return dictionary
     return brackets
@@ -56,9 +68,15 @@ def run(code: str, input: str = "") -> str:
     brackets = match_brackets(code)
     output = ""
 
+    # monitor
+    monitor = Monitor(maxflops = MAXFLOPS)
+
     # loop
     L = len(code)
     while readr < L:
+
+        # monitor
+        assert monitor.ping(), f"Error: Flops exceeded {monitor.maxflops}."
 
         # command
         cmd = code[readr]
