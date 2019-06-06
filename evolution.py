@@ -1,39 +1,37 @@
 # bloody dependencies
 import numpy as np
+import pandas as pd
 
 from brainfuck import run
 
 ALPHABET = "><+-.[]" # intentionally ignore comma
-CODESIZE = 40
-MUTATION_RATE = 0.05 # probability of random change per letter per generation
-POPSIZE = 256
-GENERATIONS = 1024
+CODESIZE = 64
+MUTATION_RATE = 0.02 # probability of random change per letter
+POPSIZE = 64
+GENERATIONS = 4096
 
 # produce a random code
-def _code():
-    code_ = np.random.choice(list(ALPHABET), CODESIZE)
-    code_ = "".join(code_)
-    return code_
+def _bfcode():
+    bfcode = np.random.choice(list(ALPHABET), CODESIZE)
+    bfcode = "".join(bfcode)
+    return bfcode
 
 # mutate a piece of code
-def _mutate(code_):
+def _mutate(bfcode):
     lexicon = list(ALPHABET)
-    mutate = np.random.choice([True, False], size = len(code_), p = [MUTATION_RATE, 1-MUTATION_RATE])
-    code_ = np.array(list(code_))
-    code_[mutate] = np.random.choice(lexicon, size = sum(mutate))
-    code_ = "".join(code_)
-    return code_
+    mutate = np.random.choice([True, False], size = len(bfcode), p = [MUTATION_RATE, 1-MUTATION_RATE])
+    bfcode = np.array(list(bfcode))
+    bfcode[mutate] = np.random.choice(lexicon, size = sum(mutate))
+    bfcode = "".join(bfcode)
+    return bfcode
 
 # measure the fitness of an output
 def _fitness(output):
-    target = "@"
+    target = "hello"
+    output = output.ljust(len(target), chr(0))
     fitness = sum([abs(ord(a) - ord(b)) for a,b in zip(output, target)])
+    fitness += len(output) - len(target) # penalize overrun
     return fitness
-
-# best fitness score
-def _winner(scores):
-    winner = min(scores, key=scores.get)
-    return winner
 
 # cross a child from two parents
 def _cross(parent1, parent2):
@@ -42,16 +40,16 @@ def _cross(parent1, parent2):
     return child
 
 # select and breed pairs of parents based on fitness scores
-def _select_and_breed(scores):
+def _select_and_breed(data):
 
     # selection probability
-    prob = np.array(list(scores.values()))
+    prob = data.score.values
     prob -= (min(prob) - 1) # shift
     prob = 1./prob # invert
     prob /= prob.sum() # normalize
 
     # select
-    individuals = list(scores.keys())
+    individuals = data.bfcode.values
     select1 = np.random.choice(individuals, POPSIZE, p = prob)
     select2 = np.random.choice(individuals, POPSIZE, p = prob)
 
@@ -59,69 +57,69 @@ def _select_and_breed(scores):
     children = [ _cross(parent1, parent2) for parent1, parent2 in zip(select1, select2) ]
     return children
 
-# send a population of individuals into life's gaping maw
-def _crucible(population):
-
-    # filter out errors & empties
-    errors, empties, successes, survivors = 0, 0, 0, {}
-    for individual in population:
-        try:
-            output = run(individual)
-            if len(output) > 0:
-                survivors[individual] = output
-                successes += 1
-            else:
-                empties += 1
-        except Exception as e:
-            errors += 1
-
-    # # report/summary
-    # print("\nResults:")
-    # print("Errors:", errors)
-    # print("Empties:", empties)
-    # print("Successes:", successes)
-
-    # return
-    return survivors
+# run code
+def _run(bfcode):
+    try:
+        output = run(bfcode)
+        return output
+    except Exception as e:
+        return None
 
 # start here
 def main():
 
     # randomize initial population
-    population = [ _code() for _ in range(POPSIZE) ]
+    bfcode = [ _bfcode() for _ in range(POPSIZE) ]
+    data = pd.DataFrame(dict(bfcode = bfcode))
 
     # loop over generations
-    bestscore = []
+    metadata = []
     for gen in range(GENERATIONS):
 
-        # subject population to the crucible that is life
-        survivors = _crucible(population)
+        # run all individual codes
+        data["output"] = [ _run(bfcode) for bfcode in data.bfcode ]
+
+        # filter survivors
+        data["error"] = data.output.isnull()
+        data = data[~data.error]
+
+        # (optional) filter no output
+        data = data[data.output.str.len() > 0]
 
         # nothing survived
-        if len(survivors) <= 0:
-            print("You have gone extinct. Rebooting...")
-            population = [ _code() for _ in range(POPSIZE) ]
+        if len(data) <= 0:
+            print("Extinction level event. Restarting...")
+            bfcode = [ _bfcode() for _ in range(POPSIZE) ]
+            data = pd.DataFrame(dict(bfcode = bfcode))
             continue
 
         # fitness scores
-        scores = { individual:_fitness(output) for individual, output in survivors.items()}
+        data["score"] = [ _fitness(output) for output in data.output ]
 
         # best score
-        winner = _winner(scores)
-        score  = scores[winner]
-        bestscore.append(score)
-        output = survivors[winner]
-        print(winner, gen, len(survivors), score, output)
-        if score <= 0:
+        winner = data.loc[data.score.idxmin()]
+        print(gen, winner.bfcode, winner.score, winner.output)
+        metadata.append(tuple(winner))
+        if winner.score <= 0:
+            print("\n", winner.output)
             break
 
         # reproduction
-        children = _select_and_breed(scores)
+        children = _select_and_breed(data)
 
         # mutation
         children = [ _mutate(child) for child in children ]
 
         # next generation
-        population = children
+        data = pd.DataFrame(dict(bfcode = children))
+
+    # done
+    cols = ['bfcode', 'output', 'error', 'score']
+    metadata = pd.DataFrame(metadata, columns = cols)
+
+    # analyze
+    import matplotlib.pyplot as plt
+    plt.plot(metadata.index, metadata.score)
+    plt.show()
 
 if __name__ == "__main__": main()
